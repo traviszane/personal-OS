@@ -1,0 +1,824 @@
+{
+  "name": "Job Search OS 2026-27",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtHour": 20
+            }
+          ]
+        }
+      },
+      "id": "38d19d7e-2fde-4f11-9b90-66bd75ec414f",
+      "name": "Every Sunday 8PM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -16,
+        144
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/actors/curious_coder~linkedin-jobs-scraper/run-sync-get-dataset-items?token=placeholder",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "apifyApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n    \"autoConvertToAiSearch\": false,\n    \"datePosted\": \"pastWeek\",\n    \"location\": \"San Francisco, California, United States\",\n    \"maxItems\": 15,\n    \"scrapeCompany\": true,\n    \"searchQueries\": [\n        \"(\\\"Head of Marketing\\\" OR \\\"Head of Content\\\" OR \\\"Head of Brand\\\" OR \\\"Head of Social Media\\\" OR \\\"Head of GTM\\\" OR \\\"Marketing Engineer\\\" OR \\\"Founding Marketer\\\" OR \\\"Product Marketing Manager\\\" OR \\\"Marketing Lead\\\") AND (AI OR SaaS OR Blockchain OR Software OR Tech)\"\n    ],\n    \"splitByLocation\": false,\n    \"under10Applicants\": false,\n    \"workplaceType\": \"all\"\n}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "47b45f0c-e50b-4c9d-ba00-b18618e3cea0",
+      "name": "Apify Job Scraper",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        256,
+        272
+      ],
+      "alwaysOutputData": false,
+      "credentials": {
+        "apifyApi": {
+          "id": "PLACEHOLDER",
+          "name": "PLACEHOLDER"
+        }
+      },
+      "disabled": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all();"
+      },
+      "id": "396fde09-24bd-4725-b8ff-873b48bf820a",
+      "name": "Parse Apify Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const seen = new Set();\nconst out = [];\nconst norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();\nconst cleanUrl = (u) => String(u || '').toLowerCase().split('?')[0].split('#')[0].replace(/[/]+$/, '');\nfor (const item of $input.all()) {\n  const j = item.json || {};\n  const title = j.title || j.jobTitle || j.positionName || '';\n  const urlKey = cleanUrl(j.url || j.jobUrl || j.link);\n  const nameKey = norm(j.companyName) + '|' + norm(title);\n  if ((urlKey && seen.has('u:' + urlKey)) || seen.has('n:' + nameKey)) continue;\n  if (urlKey) seen.add('u:' + urlKey);\n  seen.add('n:' + nameKey);\n  out.push(item);\n}\nreturn out;"
+      },
+      "id": "16e4cb7e-6a4b-4d5d-8ee1-cb24cc249fa7",
+      "name": "Deduplicate Jobs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "models/gemini-3.8-flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{ JSON.stringify($json) }}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {
+          "includeMergedResponse": true,
+          "systemMessage": "You are an elite career strategist advising a Fractional Head of Marketing. Evaluate the job description against these strict rules:\n- LOCATION FILTER: Must be explicitly located in San Francisco or Remote (US). Instant reject (Score 0) if located anywhere else.\n- COMPENSATION FILTER: Onsite or hybrid roles in San Francisco must pay roughly $200K-$300K+ USD; fully remote roles must pay $150K+ USD. Instant reject (Score 0) if compensation is explicitly stated and below the applicable threshold. Also reject junior, intern, or associate-level roles.\n- COMPANY MATURITY & FOUNDING ROLES: Default preference is established, high-growth tech companies. However, if it is an early-stage/founding marketing role, only pass it if it represents an exact, elite systems-architecture match (Score 90+). Otherwise, reject 'first marketing hire' or 'solo marketer' roles at unproven companies.\n- SCORING: If it passes, score it 1-100 based on systems/GTM alignment and executive scale.\n- CATEGORY SELECTION: Classify into exactly one category: [Marketing, Marketing Engineering, Brand & Narrative, Social & Digital Media, Product Marketing, Content Marketing, Influencer Marketing, Editorial, Copywriting, Writing, Community Management, Creator Management, Partnerships, General].\nReturn strictly a JSON object: {\"score\": X, \"rationale\": \"One sentence explanation covering location, company profile, and fit.\", \"category\": \"Selected Category\"}."
+        }
+      },
+      "id": "698ec325-38fd-4ff2-a176-cd8b7c311bba",
+      "name": "Score & Categorize Job",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        1824,
+        -192
+      ],
+      "retryOnFail": true,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "KcIkA3boB074ZzdC",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "models/gemini-3.8-flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Identify the best person to contact about this role at {{ $('Loop Over Jobs').item.json.companyName }}. Role listing:\n{{ JSON.stringify($('Loop Over Jobs').item.json) }}"
+            }
+          ]
+        },
+        "builtInTools": {
+          "googleSearch": true,
+          "urlContext": true,
+          "codeExecution": false
+        },
+        "options": {
+          "includeMergedResponse": true,
+          "systemMessage": "You research hiring contacts using Google Search and public pages. Find the most likely hiring manager for the role (the leader of the team the role reports into, such as a CMO, VP Marketing, or Head of Growth). If the company is small (roughly under 50 people) or no manager is findable, use the founder or CEO. Then find that person's work email.\nEMAIL RULES: Only report an email as \"found\" if it appears on a public page you actually read. Otherwise, if the company's email format is publicly known, give a best-guess address and mark it \"pattern-guess\". If nothing is known, leave email empty and mark it \"unknown\". Never present a guess as verified.\nReturn strictly a JSON object with no commentary: {\"name\": \"\", \"title\": \"\", \"email\": \"\", \"emailStatus\": \"found|pattern-guess|unknown\", \"source\": \"URL or short note\"}. Use empty strings for anything you cannot determine."
+        }
+      },
+      "id": "8f035526-1790-4bac-a2cd-3e0dee134f8d",
+      "name": "Find Hiring Manager",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        2768,
+        384
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "KcIkA3boB074ZzdC",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const fence = String.fromCharCode(96, 96, 96);\nlet c = {};\ntry {\n  const o = $json.output;\n  c = typeof o === 'string' ? JSON.parse(o.split(fence + 'json').join('').split(fence).join('').trim()) : (o || {});\n} catch (e) {\n  c = {};\n}\nlet emailPart = 'email not found';\nif (c.email) {\n  emailPart = c.emailStatus === 'found' ? c.email : c.email + ' (unverified guess)';\n}\nconst who = [c.name, c.title].filter(Boolean).join(', ');\nconst contactInfo = who ? who + ' | ' + emailPart : 'Contact not found | ' + emailPart;\nreturn { json: { contact: c, contactInfo } };"
+      },
+      "id": "4c5e256c-d2f1-4231-8cdd-987d3f0380cb",
+      "name": "Parse Hiring Manager",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3120,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "models/gemini-3.8-flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Write a short, peer-to-peer cold email to the hiring contact below for this role at {{ $('Loop Over Jobs').item.json.companyName }}.\n\nContact: {{ $json.contactInfo }}\nContact name: {{ $json.contact.name || '(unknown)' }}\n\nJob listing:\n{{ JSON.stringify($('Loop Over Jobs').item.json) }}"
+            }
+          ]
+        },
+        "builtInTools": {
+          "googleSearch": false,
+          "urlContext": false,
+          "codeExecution": false
+        },
+        "options": {
+          "includeMergedResponse": true,
+          "systemMessage": "You are ghostwriting cold outreach emails as Travis Zane, in first person.\n\nPROFESSIONAL IDENTITY: Travis Zane is a systems-oriented Head of Marketing, GTM Architect, and fractional marketing engineering leader with 10+ years of experience scaling frontier technology, AI, and infrastructure companies (Daydream, Oasis, Superlayer, Lagrange). Based in San Francisco, remote-friendly.\nCORE EXPERTISE: GTM systems architecture, zero-to-one product launches, developer adoption, category creation (privacy-preserving AI, zero-knowledge compute), and autonomous AI-powered content workflows. Content, social media, and brand marketing are core strengths.\nFRACTIONAL WORK: building continuous GTM delivery pipelines and autonomous marketing engineering OS infrastructure, including agentic workflows that run marketing operations end to end.\nPROOF POINTS (use only these; never invent employers, titles, or metrics):\n- Head of Marketing, Lagrange Labs (Jul 2024 - present): led GTM for the $LA product (>$1B valuation at launch); owns brand, growth, social, web, events, and PR; advises executives during launches; grew @lagrangedev 340% YoY to 635K+ monthly impressions on X; directed the DeepProve launch (1.7M views, 30+ enterprise, AI, and finance partners with BD) and Turing Roulette (144K+ users, 3.75M+ AI proofs, one of the largest ML activations to date); built and manages a cross-functional team.\n- Brand & Marketing Lead, Oasis (Oct 2021 - Jul 2024): 5M+ average monthly impressions, 767% YoY social growth; directed the ROFL rebrand and multiple product launches; built a 100+ partner co-marketing network and repeatable campaign playbooks.\n- Head of Social Media, Superlayer (contract; scaled socials 481% in six months) and Rally (grew key socials 103% in six months).\n- Scaled social communities 700%+ and took AI protocols from zero to 144K+ users; executed 9-figure token go-to-market strategies.\nDUAL THREAT: hard technical GTM execution plus world-class narrative craft, creative direction, and long-form writing. Author of multi-volume literary manuscripts and independent print magazines, with exhibition history at the Japanese American National Museum. Bridges complex frontier technology with human-centric storytelling.\nVOICE AND TONE: confident, peer-to-peer, analytical, human-centric. Never generic, never desperate, allergic to empty marketing buzzwords. Speaks directly to foundational market realities and systems design.\n\nWRITING RULES:\n- Short: 3 tight paragraphs, peer-to-peer, confident and collegial. No cliches (\"I hope this finds you well\", \"I am writing to express my interest\"), no buzzwords, never desperate or flattering.\n- Address the contact by first name. If the name is unknown, open with \"Hi there\".\n- Paragraph 1: a specific, credible hook about the company and role from the listing.\n- Paragraph 2: connect one or two relevant proof points to what the role needs. Emphasize GTM systems and agentic workflows. Pick only what fits; never list everything.\n- Paragraph 3: a low-friction ask (a short conversation) and a sign-off as Travis Zane.\n- If the listing lacks detail, stay general rather than guessing.\n- Output only the plain-text email body, with no subject line, markdown, or commentary."
+        }
+      },
+      "id": "bd6af851-fda3-4c9f-abc4-850db709067b",
+      "name": "Draft Outreach Email",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        2768,
+        192
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "KcIkA3boB074ZzdC",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "models/gemini-3.8-flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Job listing data (look inside it for the application or apply URL):\n{{ JSON.stringify($('Loop Over Jobs').item.json) }}"
+            }
+          ]
+        },
+        "builtInTools": {
+          "googleSearch": false,
+          "urlContext": true,
+          "codeExecution": false
+        },
+        "options": {
+          "includeMergedResponse": true,
+          "systemMessage": "You prepare application materials as Travis Zane, in first person. Read the job listing and, if an application or apply URL is present, try to read that page for the application requirements.\n\nPROFESSIONAL IDENTITY: Travis Zane is a systems-oriented Head of Marketing, GTM Architect, and fractional marketing engineering leader with 10+ years of experience scaling frontier technology, AI, and infrastructure companies (Daydream, Oasis, Superlayer, Lagrange). Based in San Francisco, remote-friendly.\nCORE EXPERTISE: GTM systems architecture, zero-to-one product launches, developer adoption, category creation (privacy-preserving AI, zero-knowledge compute), and autonomous AI-powered content workflows. Content, social media, and brand marketing are core strengths.\nFRACTIONAL WORK: building continuous GTM delivery pipelines and autonomous marketing engineering OS infrastructure, including agentic workflows that run marketing operations end to end.\nPROOF POINTS (use only these; never invent employers, titles, or metrics):\n- Head of Marketing, Lagrange Labs (Jul 2024 - present): led GTM for the $LA product (>$1B valuation at launch); owns brand, growth, social, web, events, and PR; advises executives during launches; grew @lagrangedev 340% YoY to 635K+ monthly impressions on X; directed the DeepProve launch (1.7M views, 30+ enterprise, AI, and finance partners with BD) and Turing Roulette (144K+ users, 3.75M+ AI proofs, one of the largest ML activations to date); built and manages a cross-functional team.\n- Brand & Marketing Lead, Oasis (Oct 2021 - Jul 2024): 5M+ average monthly impressions, 767% YoY social growth; directed the ROFL rebrand and multiple product launches; built a 100+ partner co-marketing network and repeatable campaign playbooks.\n- Head of Social Media, Superlayer (contract; scaled socials 481% in six months) and Rally (grew key socials 103% in six months).\n- Scaled social communities 700%+ and took AI protocols from zero to 144K+ users; executed 9-figure token go-to-market strategies.\nDUAL THREAT: hard technical GTM execution plus world-class narrative craft, creative direction, and long-form writing. Author of multi-volume literary manuscripts and independent print magazines, with exhibition history at the Japanese American National Museum. Bridges complex frontier technology with human-centric storytelling.\nVOICE AND TONE: confident, peer-to-peer, analytical, human-centric. Never generic, never desperate, allergic to empty marketing buzzwords. Speaks directly to foundational market realities and systems design.\n\nTASK:\n1. Decide whether the application EXPLICITLY asks for a cover letter (required or optional upload/text field). Only then set coverLetterRequested to true and write a concise, specific cover letter (3 short paragraphs, same voice rules). Otherwise set it to false and leave coverLetter empty.\n2. Find any specific essay or short-answer questions in the application (for example \"Why do you want to work here?\"). Draft a direct, specific answer to each. EXCLUDE demographic questions, EEO/voluntary self-identification, and multiple-choice or yes/no surveys.\n3. Only use questions you actually saw in the listing or the readable application page. If the application page is not readable (login wall, Easy Apply form), return an empty questions array. Never invent questions.\nReturn strictly a JSON object with no commentary: {\"coverLetterRequested\": false, \"coverLetter\": \"\", \"questions\": [{\"question\": \"\", \"answer\": \"\"}]}."
+        }
+      },
+      "id": "ad3d38bf-f8a4-4ce4-9d59-02c079295cf4",
+      "name": "Draft Application Materials",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        3696,
+        384
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "KcIkA3boB074ZzdC",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://docs.google.com/document/d/1R2EGK4pn4L_yJnX2YlPpiJ577JnwMbVWVwmWtv7OafA/edit?tab=t.0",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "options": {}
+      },
+      "id": "82d0a2a1-1c96-4223-a433-4e80cb7f2415",
+      "name": "Get Working Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        4048,
+        384
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "lJEZD9bn9sQyUq50",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const fence = String.fromCharCode(96, 96, 96);\nconst doc = $json;\nconst hm = $('Parse Hiring Manager').item.json;\nconst job = $('Loop Over Jobs').item.json;\nconst emailText = String($('Draft Outreach Email').item.json.output || '').trim();\nlet mat = {};\ntry {\n  const o = $('Draft Application Materials').item.json.output;\n  mat = typeof o === 'string' ? JSON.parse(o.split(fence + 'json').join('').split(fence).join('').trim()) : (o || {});\n} catch (e) {\n  mat = {};\n}\n\nconst content = (doc.body && doc.body.content) || [];\nconst lastEl = content[content.length - 1] || { endIndex: 2 };\nconst insertAt = Math.max(1, (lastEl.endIndex || 2) - 1);\nconst paraText = (el) => ((el.paragraph && el.paragraph.elements) || []).map((e) => (e.textRun && e.textRun.content) || '').join('');\nconst fullText = content.map(paraText).join('');\nconst lastText = paraText(lastEl);\nconst lead = lastText.trim() !== '' ? '\\n' : '';\n\nconst weekLabel = 'Week of ' + $now.plus({ days: 1 }).startOf('week').toFormat('LLLL d, yyyy');\nconst title = job.title || job.jobTitle || job.positionName || 'Role';\nconst company = job.companyName || 'Company';\n\nconst parts = [];\nif (!fullText.includes(weekLabel)) parts.push({ text: weekLabel, style: 'H1' });\nparts.push({ text: company + ' \\u2014 ' + title, style: 'H2', link: job.url || '' });\nif (job.url) parts.push({ text: 'Listing: ' + job.url, style: 'BODY' });\nparts.push({ text: 'Outreach contact: ' + hm.contactInfo, style: 'BODY' });\nparts.push({ text: 'Hiring Manager Outreach Email', style: 'LABEL' });\nparts.push({ text: emailText || '(no draft generated)', style: 'BODY' });\nif (mat.coverLetterRequested && mat.coverLetter) {\n  parts.push({ text: 'Cover Letter Draft', style: 'LABEL' });\n  parts.push({ text: String(mat.coverLetter).trim(), style: 'BODY' });\n}\nconst qs = Array.isArray(mat.questions) ? mat.questions.filter((q) => q && q.question && q.answer) : [];\nif (qs.length) {\n  parts.push({ text: 'Application Questions Draft', style: 'LABEL' });\n  qs.forEach((q) => parts.push({ text: 'Q: ' + q.question + '\\nA: ' + q.answer, style: 'BODY' }));\n}\nparts.push({ text: '', style: 'BODY' });\n\nlet text = lead;\nconst ranges = [];\nparts.forEach((p) => {\n  const start = insertAt + text.length;\n  text += p.text + '\\n';\n  ranges.push({ start, end: insertAt + text.length, style: p.style, link: p.link });\n});\n\nconst rng = (start, end) => ({ startIndex: start, endIndex: end });\nconst requests = [\n  { insertText: { location: { index: insertAt }, text } },\n  { updateParagraphStyle: { range: rng(insertAt, insertAt + text.length), paragraphStyle: { namedStyleType: 'NORMAL_TEXT' }, fields: 'namedStyleType' } },\n  { updateTextStyle: { range: rng(insertAt, insertAt + text.length), textStyle: { bold: false }, fields: 'bold' } }\n];\nranges.forEach((r) => {\n  if (r.style === 'H1' || r.style === 'H2') {\n    requests.push({ updateParagraphStyle: { range: rng(r.start, r.end), paragraphStyle: { namedStyleType: r.style === 'H1' ? 'HEADING_1' : 'HEADING_2' }, fields: 'namedStyleType' } });\n    if (r.style === 'H2' && r.link) {\n      requests.push({ updateTextStyle: { range: rng(r.start, r.end - 1), textStyle: { link: { url: r.link } }, fields: 'link' } });\n    }\n  } else if (r.style === 'LABEL') {\n    requests.push({ updateTextStyle: { range: rng(r.start, r.end - 1), textStyle: { bold: true }, fields: 'bold' } });\n  }\n});\n\nreturn { json: { documentId: doc.documentId, weekLabel, body: { requests } } };"
+      },
+      "id": "50a214d9-3128-46fa-a1cd-a8d26b1cd508",
+      "name": "Build Doc Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4272,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{ $json.documentId }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "id": "8d167e58-9816-4609-8f53-fc2227176522",
+      "name": "Update Working Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        4496,
+        384
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "lJEZD9bn9sQyUq50",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1SqPwwZP7vcdtJEe8YI25L6XBmG_8RGbAZDYaHT_VJBI",
+          "mode": "list",
+          "cachedResultName": "Career Opportunities (2020 ⇢)",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1SqPwwZP7vcdtJEe8YI25L6XBmG_8RGbAZDYaHT_VJBI/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Job Apps"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Status": "OS (To Review)",
+            "Job + Listing Link": "={{ $('Loop Over Jobs').item.json.url }}",
+            "Company": "={{ $('Loop Over Jobs').item.json.companyName }}",
+            "App Source": "={{ 'Job Search OS - ' + $('Loop Over Jobs').item.json.platform }}",
+            "Job Category": "={{ (() => { const o = $('Score & Categorize Job').item.json.output; const p = typeof o === 'string' ? JSON.parse(o.replace(/```json|```/g, '').trim()) : o; return p; })().category }}",
+            "AI Rank": "={{ '[Score: ' + (() => { const o = $('Score & Categorize Job').item.json.output; const p = typeof o === 'string' ? JSON.parse(o.replace(/```json|```/g, '').trim()) : o; return p; })().score + '/100] ' + (() => { const o = $('Score & Categorize Job').item.json.output; const p = typeof o === 'string' ? JSON.parse(o.replace(/```json|```/g, '').trim()) : o; return p; })().rationale }}",
+            "Outreach Contact + Info": "={{ $('Parse Hiring Manager').item.json.contactInfo }}",
+            "Cover Letter": "",
+            "OS": "Job Search OS - 2026"
+          },
+          "schema": [
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Job + Listing Link",
+              "displayName": "Job + Listing Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Company",
+              "displayName": "Company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "App Source",
+              "displayName": "App Source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Job Category",
+              "displayName": "Job Category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "AI Rank",
+              "displayName": "AI Rank",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Outreach Contact + Info",
+              "displayName": "Outreach Contact + Info",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Cover Letter",
+              "displayName": "Cover Letter",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "OS",
+              "displayName": "OS",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1d9a505e-fff5-46f6-bb32-5e6169f37952",
+      "name": "Append to Career Opportunities",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3120,
+        192
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Q9arruHPRkMUxwsn",
+          "name": "Google Sheets travzane@gmail.com"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "b8afe717-eaa2-48af-88c8-1cc7673de05c",
+      "name": "Loop Over Jobs",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1840,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "3ebda34a-325b-4d4b-8269-d357208894e4",
+      "name": "Apify MCP",
+      "type": "@n8n/mcp-registry.apify",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "apifyMcpOAuth2Api": {
+          "id": "NqqWwVFvAP80aeV3",
+          "name": "Apify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get incoming scraped items from Apify fetcher\nconst incomingItems = $input.all();\n\n// Get existing rows pulled from Google Sheets\nconst existingRows = $('Get Existing Sheet Rows').all();\n\n// Create a Set of normalized \"company|title\" keys from your sheet\nconst existingSet = new Set(\n  existingRows.map(row => {\n    const company = (row.json.Company || '').trim().toLowerCase();\n    const title = (row.json['Job Title'] || row.json.Title || '').trim().toLowerCase();\n    return `${company}|${title}`;\n  })\n);\n\n// Filter incoming items: keep only those NOT already in the sheet\nconst filteredItems = incomingItems.filter(item => {\n  const incCompany = (item.json.company || item.json.Company || '').trim().toLowerCase();\n  const incTitle = (item.json.title || item.json.Title || '').trim().toLowerCase();\n  const key = `${incCompany}|${incTitle}`;\n\n  // If the sheet already has this company + title, drop it\n  return !existingSet.has(key);\n});\n\nreturn filteredItems;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        144
+      ],
+      "id": "be05b955-2b5d-4441-b71b-37d209d5798c",
+      "name": "De-Duplicate Jobs Already in Sheet",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect all items that passed the 85+ score filter from the loop/router\nconst items = $input.all();\n\n// Sort them in descending order (highest score first)\nitems.sort((a, b) => {\n  const scoreA = Number(a.json.score || a.json.Score || 0);\n  const scoreB = Number(b.json.score || b.json.Score || 0);\n  return scoreB - scoreA; \n});\n\n// Slice the array to keep only the top 10 highest-scoring roles\nconst topTen = items.slice(0, 10);\n\nreturn topTen;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2288,
+        112
+      ],
+      "id": "61dabaef-0dbf-4f61-abd5-d899394ff87a",
+      "name": "Filter the Top 10 Job Results"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1SqPwwZP7vcdtJEe8YI25L6XBmG_8RGbAZDYaHT_VJBI",
+          "mode": "list",
+          "cachedResultName": "Career Opportunities (2020 ⇢)",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1SqPwwZP7vcdtJEe8YI25L6XBmG_8RGbAZDYaHT_VJBI/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Job Apps",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1SqPwwZP7vcdtJEe8YI25L6XBmG_8RGbAZDYaHT_VJBI/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1360,
+        144
+      ],
+      "id": "000eee0f-930f-4c17-a069-ae24ce5125f9",
+      "name": "Get Existing Sheet Rows",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "9vv5D9Y0Smo6bG1r",
+          "name": "Google Sheets traviszanemedia@gmail.com"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "resource": "Datasets",
+        "datasetId": "9sh8wbqZ4hBfO4xm6",
+        "offset": {},
+        "limit": 200,
+        "options": {}
+      },
+      "type": "@apify/n8n-nodes-apify.apify",
+      "typeVersion": 2,
+      "position": [
+        464,
+        272
+      ],
+      "id": "dc0d579e-b70d-4cbe-a894-595dbbd42508",
+      "name": "Apify LinkedIn Dataset",
+      "credentials": {
+        "apifyApi": {
+          "id": "PLACEHOLDER",
+          "name": "PLACEHOLDER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get raw jobs from Apify\nconst items = $input.all();\n\n// Define words that instantly disqualify a job\nconst excludeWords = [\n  'recruiter', \n  'recruiting', \n  'talent acquisition', \n  'human resources', \n  'hr', \n  'software engineer', \n  'software developer', \n  'account executive', \n  'sales development'\n];\n\n// Filter out any job where the title contains excluded words\nconst filteredJobs = items.filter(item => {\n  const title = (item.json.title || item.json.Title || '').toLowerCase();\n  \n  // Check if the title includes any forbidden keywords\n  const isExcluded = excludeWords.some(word => title.includes(word));\n  \n  // Keep only if it's NOT excluded\n  return !isExcluded;\n});\n\nreturn filteredJobs;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        656,
+        272
+      ],
+      "id": "911f80c0-5646-4973-9c59-e4deb83f2abf",
+      "name": "Job Precision Filter"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every Sunday 8PM": {
+      "main": [
+        [
+          {
+            "node": "Apify Job Scraper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apify Job Scraper": {
+      "main": [
+        [
+          {
+            "node": "Apify LinkedIn Dataset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Apify Response": {
+      "main": [
+        [
+          {
+            "node": "Deduplicate Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplicate Jobs": {
+      "main": [
+        [
+          {
+            "node": "Get Existing Sheet Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score & Categorize Job": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Hiring Manager": {
+      "main": [
+        [
+          {
+            "node": "Parse Hiring Manager",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Hiring Manager": {
+      "main": [
+        [
+          {
+            "node": "Draft Outreach Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Outreach Email": {
+      "main": [
+        [
+          {
+            "node": "Draft Application Materials",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Application Materials": {
+      "main": [
+        [
+          {
+            "node": "Get Working Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Working Doc": {
+      "main": [
+        [
+          {
+            "node": "Build Doc Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Doc Update": {
+      "main": [
+        [
+          {
+            "node": "Update Working Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Working Doc": {
+      "main": [
+        [
+          {
+            "node": "Append to Career Opportunities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append to Career Opportunities": {
+      "main": [
+        []
+      ]
+    },
+    "Loop Over Jobs": {
+      "main": [
+        [
+          {
+            "node": "Filter the Top 10 Job Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Score & Categorize Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "De-Duplicate Jobs Already in Sheet": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter the Top 10 Job Results": {
+      "main": [
+        [
+          {
+            "node": "Find Hiring Manager",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Existing Sheet Rows": {
+      "main": [
+        [
+          {
+            "node": "De-Duplicate Jobs Already in Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apify LinkedIn Dataset": {
+      "main": [
+        [
+          {
+            "node": "Job Precision Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job Precision Filter": {
+      "main": [
+        [
+          {
+            "node": "Parse Apify Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "2749cdd0-d3c0-4537-8de4-97e7ff41d25d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f98b4a9c880aca02eca83f223a2f73d9e90e4a38381d1f0e5c4eb9f9540432e7"
+  },
+  "nodeGroups": [
+    {
+      "id": "75176a09-9d75-46cb-a851-4ef947ea481f",
+      "name": "Fetch job listings",
+      "nodeIds": [
+        "47b45f0c-e50b-4c9d-ba00-b18618e3cea0",
+        "396fde09-24bd-4725-b8ff-873b48bf820a",
+        "16e4cb7e-6a4b-4d5d-8ee1-cb24cc249fa7",
+        "dc0d579e-b70d-4cbe-a894-595dbbd42508",
+        "911f80c0-5646-4973-9c59-e4deb83f2abf"
+      ],
+      "description": "Every Sunday evening, pulls executive marketing leadership postings from Apify and splits them into items"
+    },
+    {
+      "id": "0061bba4-b383-4ae6-a4ba-884c8cdd7877",
+      "name": "Draft and log outreach",
+      "nodeIds": [
+        "8f035526-1790-4bac-a2cd-3e0dee134f8d",
+        "4c5e256c-d2f1-4231-8cdd-987d3f0380cb",
+        "bd6af851-fda3-4c9f-abc4-850db709067b",
+        "ad3d38bf-f8a4-4ce4-9d59-02c079295cf4",
+        "82d0a2a1-1c96-4223-a433-4e80cb7f2415",
+        "50a214d9-3128-46fa-a1cd-a8d26b1cd508",
+        "8d167e58-9816-4609-8f53-fc2227176522",
+        "1d9a505e-fff5-46f6-bb32-5e6169f37952"
+      ],
+      "description": "For roles scoring 85+, finds the hiring contact, drafts materials into the weekly Working Doc, and logs a review row to Job Apps"
+    }
+  ],
+  "id": "95LsRMl5pZEV8LNd",
+  "tags": []
+}
